@@ -8,42 +8,42 @@
 
 ```bash
 # 1. 채널 정보 조회
-python fanding.py channel stellive
-python fanding.py channel @stellive --banners
-python fanding.py channel stellive --tags
-python fanding.py channel stellive --sections home
+python fanding.py channel test
+python fanding.py channel @test --banners
+python fanding.py channel test --tags
+python fanding.py channel test --sections home
 
 # 2. 게시물 목록 조회
-python fanding.py posts stellive -n 10 --sort recent
-python fanding.py posts stellive -q "공지" -t title
-python fanding.py posts stellive --text   # 본문 첫 줄 미리보기
+python fanding.py posts test -n 10 --sort recent
+python fanding.py posts test -q "공지" -t title
+python fanding.py posts test --text   # 본문 첫 줄 미리보기
 
 # 3. 단일 게시물 상세 조회
 python fanding.py post 12345 --text
-python fanding.py post "https://fanding.kr/@stellive/post/12345" --comments 10
+python fanding.py post "https://fanding.kr/@test/post/12345" --comments 10
 python fanding.py post 12345 --download ./downloads  # 첨부파일 다운로드
 
 # 4. 댓글 및 대댓글 조회
 python fanding.py replies 12345 -n 20 --sort recent --with-children
 
 # 5. 채널 피드 및 시리즈 조회
-python fanding.py feed stellive -n 10
-python fanding.py series stellive
+python fanding.py feed test -n 10
+python fanding.py series test
 
 # 6. 커뮤니티 글 조회 및 검색
-python fanding.py community stellive -n 20
-python fanding.py community stellive -q "팬아트"
+python fanding.py community test -n 20
+python fanding.py community test -q "팬아트"
 
 # 7. 멤버십 티어 플랜 목록
-python fanding.py tiers stellive
+python fanding.py tiers test
 
 # 8. 크리에이터 검색 및 탐색
-python fanding.py search "스텔라이브"
+python fanding.py search "test"
 python fanding.py explore --hot
 python fanding.py explore --emoticons
 
 # 9. JSON 원본 출력 (모든 명령에 --json 플래그 지원)
-python fanding.py channel stellive --json
+python fanding.py channel test --json
 python fanding.py post 12345 --json
 ```
 
@@ -76,18 +76,18 @@ client = FandingClient(
 
 # 채널 정보 가져오기
 try:
-    channel = client.channel("stellive")
+    channel = client.channel("test")
     print(channel.nickname, channel.one_line)
 except ChannelNotFound:
     print("채널이 존재하지 않습니다.")
 
 # 게시물 목록 (리스트 반환)
-posts = client.posts("stellive", limit=10, sort="recent")
+posts = client.posts("test", limit=10, sort="recent")
 for p in posts:
     print(p.post_no, p.title, p.view_count)
 
 # 대량 게시물 순회 (제너레이터)
-for post in client.iter_posts("stellive", limit=100):
+for post in client.iter_posts("test", limit=100):
     print(f"[{post.post_no}] {post.title}")
 
 # 게시물 상세 조회 및 첨부파일 다운로드
