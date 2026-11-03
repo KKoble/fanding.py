@@ -2220,7 +2220,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", help="실행할 명령")
 
     p_ch = subparsers.add_parser("channel", help="채널 정보/메뉴/섹션 조회")
-    p_ch.add_argument("member_url", help="채널 아이디 (예: stellive, @stellive)")
+    p_ch.add_argument("member_url", help="채널 아이디 (예: test, @test)")
     p_ch.add_argument("--banners", action="store_true", help="채널 배너")
     p_ch.add_argument("--sections", default=None, choices=["home", "post", "event", "review"], help="탭별 섹션")
     p_ch.add_argument("--tags", action="store_true", help="태그 목록")
