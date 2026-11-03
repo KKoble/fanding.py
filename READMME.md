@@ -2,19 +2,7 @@
 
 팬딩(fanding.kr)의 채널 정보, 게시물, 댓글, 시리즈, 커뮤니티, 멤버십 티어 조회를 지원하는 비공식 파이썬 클라이언트 및 CLI 도구입니다.
 
----
-
-## 🌟 주요 특징
-
-- **외부 의존성 없음 (Zero-Dependency)**: `requests`, `bs4` 등 외부 패키지 설치 없이 Python 3.9+ 표준 라이브러리만으로 동작합니다.
-- **CLI & SDK 겸용**: 터미널 명령어(CLI) 및 파이썬 코드 내 임포트(`import fanding`)를 모두 지원합니다.
-- **데이터클래스 모델링**: API 응답을 `Channel`, `Post`, `PostDetail`, `Attachment`, `Reply`, `MembershipTier` 등의 직관적인 객체로 래핑합니다.
-- **대용량 수집 제너레이터**: `iter_posts`, `iter_channel_feed`, `iter_community_posts`, `iter_replies` 등의 제너레이터를 제공하여 메모리 효율적으로 대량 데이터를 페이지네이션 수집합니다.
-- **안정적인 에러 처리**: 429(Rate Limit) 및 5xx 서버 오류 시 `Retry-After` 헤더 기반 지수 백오프(Exponential Backoff) 자동 재시도를 지원합니다.
-
----
-
-## 🚀 CLI 사용법
+##  CLI 사용법
 
 터미널에서 `fanding.py`를 직접 실행하여 데이터를 조회할 수 있습니다.
 
@@ -70,7 +58,7 @@ python fanding.py post 12345 --auth-token "eyJhbGciOi..."
 
 ---
 
-## 💻 Python SDK 사용법
+## Python SDK 사용법
 
 스크립트나 애플리케이션 내에서 `FandingClient`를 가져와 사용할 수 있습니다.
 
@@ -118,7 +106,7 @@ for r in replies:
 
 ---
 
-## 📁 디렉터리 구성
+## 디렉터리 구성
 
 - `fanding.py`: 클라이언트 및 CLI 실행 통합 모듈 (주석 제거 및 성능/호환성 개선 완료)
 - `readme.md`: 사용 설명서
