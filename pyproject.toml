@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fanding-api"
+name = "fanding.py"
 version = "0.4.1"
 description = "팬딩(fanding.kr) 비공식 Python 클라이언트 및 CLI 도구"
 readme = "README.md"
