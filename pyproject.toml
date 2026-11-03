@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fanding-api"
+version = "0.4.1"
+description = "팬딩(fanding.kr) 비공식 Python 클라이언트 및 CLI 도구"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["fanding", "client", "api", "crawler"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+fanding = "fanding:main"
+
+[tool.setuptools]
+py-modules = ["fanding"]
