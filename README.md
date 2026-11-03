@@ -1,4 +1,4 @@
-# Fanding Unofficial Python Client (`fanding.py`)
+# Unofficial fanding.kr api moudle
 
 팬딩(fanding.kr)의 채널 정보, 게시물, 댓글, 시리즈, 커뮤니티, 멤버십 티어 조회를 지원하는 비공식 파이썬 클라이언트 및 CLI 도구입니다.
 
