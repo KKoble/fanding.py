@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
+import random
 import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from html import unescape
@@ -16,6 +19,9 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 __all__ = [
     "FandingClient",
+    "HeaderGenerator",
+    "BrowserProfile",
+    "generate_headers",
     "Channel",
     "Post",
     "PostPage",
@@ -45,7 +51,7 @@ __all__ = [
     "PostNotFound",
 ]
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 DEFAULT_BASE_URL = "https://fanding.kr"
 
@@ -56,8 +62,167 @@ MAX_COMMUNITY_PAGE_SIZE = 20
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
+
+
+@dataclass(frozen=True)
+class BrowserProfile:
+    name: str
+    user_agent: str
+    sec_ch_ua: Optional[str] = None
+    sec_ch_ua_platform: Optional[str] = None
+    sec_ch_ua_mobile: str = "?0"
+    accept_language: str = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+
+
+DEFAULT_PROFILES: List[BrowserProfile] = [
+    BrowserProfile(
+        name="chrome-windows",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        ),
+        sec_ch_ua='"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+        sec_ch_ua_platform='"Windows"',
+        sec_ch_ua_mobile="?0",
+    ),
+    BrowserProfile(
+        name="edge-windows",
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0"
+        ),
+        sec_ch_ua='"Not(A:Brand";v="99", "Microsoft Edge";v="133", "Chromium";v="133"',
+        sec_ch_ua_platform='"Windows"',
+        sec_ch_ua_mobile="?0",
+    ),
+    BrowserProfile(
+        name="chrome-macos",
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        ),
+        sec_ch_ua='"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+        sec_ch_ua_platform='"macOS"',
+        sec_ch_ua_mobile="?0",
+    ),
+    BrowserProfile(
+        name="safari-macos",
+        user_agent=(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+            "(KHTML, like Gecko) Version/18.3 Safari/605.1.15"
+        ),
+        sec_ch_ua=None,
+        sec_ch_ua_platform=None,
+        sec_ch_ua_mobile="?0",
+    ),
+    BrowserProfile(
+        name="firefox-windows",
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0",
+        sec_ch_ua=None,
+        sec_ch_ua_platform=None,
+        sec_ch_ua_mobile="?0",
+    ),
+]
+
+
+class HeaderGenerator:
+    """실제 최신 브라우저와 동일한 현실적인 HTTP 요청 헤더를 자동 생성합니다."""
+
+    def __init__(
+        self,
+        profiles: Optional[List[BrowserProfile]] = None,
+        default_profile: str = "chrome-windows",
+    ) -> None:
+        self.profiles = list(profiles or DEFAULT_PROFILES)
+        self._profiles_by_name = {p.name: p for p in self.profiles}
+        self.default_profile = self._profiles_by_name.get(
+            default_profile, self.profiles[0] if self.profiles else None
+        )
+
+    def get_profile(
+        self,
+        name_or_profile: Optional[Union[str, BrowserProfile]] = None,
+        random_select: bool = False,
+    ) -> BrowserProfile:
+        if isinstance(name_or_profile, BrowserProfile):
+            return name_or_profile
+        if random_select and self.profiles:
+            return random.choice(self.profiles)
+        if isinstance(name_or_profile, str) and name_or_profile in self._profiles_by_name:
+            return self._profiles_by_name[name_or_profile]
+        if self.default_profile:
+            return self.default_profile
+        if self.profiles:
+            return self.profiles[0]
+        return BrowserProfile(name="default", user_agent=DEFAULT_USER_AGENT)
+
+    def generate(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        path: Optional[str] = None,
+        profile: Optional[Union[str, BrowserProfile]] = None,
+        random_profile: bool = False,
+        auth_token: Optional[str] = None,
+        cookies: Optional[Union[Dict[str, str], str]] = None,
+        custom_headers: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, str]:
+        prof = self.get_profile(profile, random_select=random_profile)
+        base = base_url.rstrip("/")
+        headers: Dict[str, str] = {
+            "User-Agent": prof.user_agent,
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": prof.accept_language,
+            "Accept-Encoding": "gzip, deflate",
+            "Referer": f"{base}/",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Priority": "u=1, i",
+        }
+        if prof.sec_ch_ua:
+            headers["sec-ch-ua"] = prof.sec_ch_ua
+        if prof.sec_ch_ua_mobile:
+            headers["sec-ch-ua-mobile"] = prof.sec_ch_ua_mobile
+        if prof.sec_ch_ua_platform:
+            headers["sec-ch-ua-platform"] = prof.sec_ch_ua_platform
+
+        if cookies:
+            if isinstance(cookies, dict):
+                headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+            else:
+                headers["Cookie"] = str(cookies)
+
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        if custom_headers:
+            headers.update(custom_headers)
+
+        return headers
+
+
+def generate_headers(
+    base_url: str = DEFAULT_BASE_URL,
+    path: Optional[str] = None,
+    profile: Optional[Union[str, BrowserProfile]] = None,
+    random_profile: bool = False,
+    auth_token: Optional[str] = None,
+    cookies: Optional[Union[Dict[str, str], str]] = None,
+    custom_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """간편한 자동 브라우저 헤더 생성 유틸리티 함수."""
+    return HeaderGenerator().generate(
+        base_url=base_url,
+        path=path,
+        profile=profile,
+        random_profile=random_profile,
+        auth_token=auth_token,
+        cookies=cookies,
+        custom_headers=custom_headers,
+    )
+
 
 KST = timezone(timedelta(hours=9))
 
@@ -281,6 +446,10 @@ class Channel:
         return f"{DEFAULT_BASE_URL}/@{self.member_url}/"
 
     @property
+    def channel_url(self) -> str:
+        return self.url
+
+    @property
     def posts_url(self) -> str:
         return f"{DEFAULT_BASE_URL}/@{self.member_url}/posts"
 
@@ -486,9 +655,10 @@ class Attachment:
     ) -> str:
         if not self.url:
             raise ValueError("다운로드 가능한 URL이 없습니다.")
-        req_headers = {"User-Agent": DEFAULT_USER_AGENT}
         if headers:
-            req_headers.update(headers)
+            req_headers = dict(headers)
+        else:
+            req_headers = generate_headers()
         req = urllib.request.Request(self.url, headers=req_headers)
         temp_path = f"{target_path}.tmp"
         with urllib.request.urlopen(req) as resp, open(temp_path, "wb") as f:
@@ -1359,31 +1529,97 @@ class FandingClient:
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 15.0,
         retries: int = 2,
-        user_agent: str = DEFAULT_USER_AGENT,
+        user_agent: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         auth_token: Optional[str] = None,
         cookies: Optional[Union[Dict[str, str], str]] = None,
-        delay: float = 0.0,
+        delay: float = 0.1,
+        jitter: Union[float, Tuple[float, float], bool] = 0.4,
+        cooldown: float = 1.0,
+        penalty_cooldown: float = 3.0,
+        auto_headers: bool = True,
+        rotate_headers: bool = False,
+        browser_profile: Optional[Union[str, BrowserProfile]] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.retries = max(0, int(retries))
         self.delay = max(0.0, float(delay))
-        self._headers = {
-            "User-Agent": user_agent,
+        self.jitter = jitter
+        self.cooldown = max(0.0, float(cooldown))
+        self.penalty_cooldown = max(0.0, float(penalty_cooldown))
+        self.auto_headers = auto_headers
+        self.rotate_headers = rotate_headers
+        self.browser_profile = browser_profile
+        self.auth_token = auth_token
+        self.cookies = cookies
+        self._custom_headers = dict(headers or {})
+
+        self.header_generator = HeaderGenerator()
+        self._last_request_time: float = 0.0
+        self._current_penalty: float = 0.0
+
+        if user_agent:
+            self._custom_headers["User-Agent"] = user_agent
+
+        # 기본 캐시 헤더 생성
+        self._headers = self._build_request_headers()
+
+    def _build_request_headers(self, path: Optional[str] = None) -> Dict[str, str]:
+        if self.auto_headers:
+            return self.header_generator.generate(
+                base_url=self.base_url,
+                path=path,
+                profile=self.browser_profile,
+                random_profile=self.rotate_headers,
+                auth_token=self.auth_token,
+                cookies=self.cookies,
+                custom_headers=self._custom_headers,
+            )
+        base_headers = {
+            "User-Agent": self._custom_headers.get("User-Agent") or DEFAULT_USER_AGENT,
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
             "Referer": f"{self.base_url}/",
         }
-        if cookies:
-            if isinstance(cookies, dict):
-                self._headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        if self.cookies:
+            if isinstance(self.cookies, dict):
+                base_headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookies.items())
             else:
-                self._headers["Cookie"] = str(cookies)
-        if auth_token:
-            self._headers["Authorization"] = f"Bearer {auth_token}"
-        if headers:
-            self._headers.update(headers)
+                base_headers["Cookie"] = str(self.cookies)
+        if self.auth_token:
+            base_headers["Authorization"] = f"Bearer {self.auth_token}"
+        if self._custom_headers:
+            base_headers.update(self._custom_headers)
+        return base_headers
+
+    def _get_jitter(self) -> float:
+        """설정된 지터 규칙에 따라 무작위 지터 시간(초)을 계산합니다."""
+        if isinstance(self.jitter, bool):
+            return random.uniform(0.1, 0.5) if self.jitter else 0.0
+        if isinstance(self.jitter, (tuple, list)) and len(self.jitter) == 2:
+            lo, hi = sorted((float(self.jitter[0]), float(self.jitter[1])))
+            return random.uniform(lo, hi)
+        if isinstance(self.jitter, (int, float)) and self.jitter > 0:
+            return random.uniform(0.0, float(self.jitter))
+        return 0.0
+
+    def _wait_cooldown(self) -> float:
+        """이전 요청 시각 기준으로 쿨다운 및 지터를 계산하여 필요한 경우 대기합니다."""
+        effective_cooldown = self.cooldown + self._current_penalty
+        if effective_cooldown <= 0 or self._last_request_time <= 0:
+            return 0.0
+
+        target_interval = effective_cooldown
+        if self.jitter:
+            target_interval += self._get_jitter()
+
+        elapsed = time.monotonic() - self._last_request_time
+        remaining = target_interval - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
+            return remaining
+        return 0.0
 
     def _request(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         url = f"{self.base_url}{path}"
@@ -1394,34 +1630,88 @@ class FandingClient:
 
         last_exc: Optional[Exception] = None
         for attempt in range(self.retries + 1):
-            req = urllib.request.Request(url, headers=self._headers)
+            # 요청 직전 최소 쿨다운 간격 보장
+            self._wait_cooldown()
+
+            req_headers = (
+                self._build_request_headers(path=path)
+                if (self.rotate_headers or not self._headers)
+                else dict(self._headers)
+            )
+            req = urllib.request.Request(url, headers=req_headers)
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    body = resp.read().decode("utf-8", "replace")
+                    raw_bytes = resp.read()
+                    encoding = (resp.headers.get("Content-Encoding") or "").lower()
+                    if "gzip" in encoding:
+                        raw_bytes = gzip.decompress(raw_bytes)
+                    elif "deflate" in encoding:
+                        try:
+                            raw_bytes = zlib.decompress(raw_bytes)
+                        except zlib.error:
+                            raw_bytes = zlib.decompress(raw_bytes, -zlib.MAX_WBITS)
+                    body = raw_bytes.decode("utf-8", "replace")
+
+                self._last_request_time = time.monotonic()
+                if self._current_penalty > 0:
+                    self._current_penalty = max(0.0, self._current_penalty * 0.5)
                 break
+
             except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", "replace")
+                self._last_request_time = time.monotonic()
+                raw_err = e.read()
+                encoding = (e.headers.get("Content-Encoding") or "").lower()
+                if "gzip" in encoding:
+                    try:
+                        raw_err = gzip.decompress(raw_err)
+                    except Exception:
+                        pass
+                elif "deflate" in encoding:
+                    try:
+                        raw_err = zlib.decompress(raw_err)
+                    except Exception:
+                        pass
+                body = raw_err.decode("utf-8", "replace")
+
+                if e.code == 429:
+                    self._current_penalty = max(
+                        self.penalty_cooldown,
+                        self._current_penalty * 1.5 if self._current_penalty else self.penalty_cooldown,
+                    )
+
                 if e.code in (429, 500, 502, 503, 504) and attempt < self.retries:
                     last_exc = e
                     retry_after = e.headers.get("Retry-After")
                     try:
-                        wait = float(retry_after) if retry_after else (0.5 * (attempt + 1))
+                        base_wait = float(retry_after) if retry_after else (0.5 * (2 ** attempt))
                     except (ValueError, TypeError):
-                        wait = 0.5 * (attempt + 1)
-                    time.sleep(wait)
+                        base_wait = 0.5 * (2 ** attempt)
+                    jitter_val = self._get_jitter() or random.uniform(0.1, 0.4)
+                    time.sleep(base_wait + jitter_val)
                     continue
                 raise self._error_from_response(e.code, body, url) from None
+
             except (urllib.error.URLError, TimeoutError, OSError) as e:
+                self._last_request_time = time.monotonic()
                 last_exc = e
                 if attempt < self.retries:
-                    time.sleep(0.5 * (attempt + 1))
+                    base_wait = 0.5 * (2 ** attempt)
+                    jitter_val = self._get_jitter() or random.uniform(0.1, 0.4)
+                    time.sleep(base_wait + jitter_val)
                     continue
                 raise FandingError(f"요청 실패: {url} ({e})") from e
         else:
             raise FandingError(f"요청 실패: {url} ({last_exc})")
 
-        if self.delay:
-            time.sleep(self.delay)
+        total_delay = self.delay
+        if self.delay > 0 and self.jitter:
+            total_delay += self._get_jitter()
+        elif self.delay == 0.0 and self.jitter and not self.cooldown:
+            total_delay = self._get_jitter()
+
+        if total_delay > 0:
+            time.sleep(total_delay)
+            self._last_request_time = time.monotonic()
 
         try:
             payload = json.loads(body)
@@ -1724,6 +2014,8 @@ class FandingClient:
         )
         return [Banner.from_api(b) for b in ((data or {}).get("aMainBannerList") or [])]
 
+    banners = channel_banners
+
     def channel_sections(
         self, member_url: str, tab: str = "home", after_section_no: Optional[int] = None
     ) -> List[ChannelSection]:
@@ -1733,6 +2025,8 @@ class FandingClient:
             {"sMemberUrl": member_url, "sTab": tab, "iLastSectionNo": after_section_no},
         )
         return [ChannelSection.from_api(s, client=self) for s in ((data or {}).get("aSectionList") or [])]
+
+    sections = channel_sections
 
     def channel_feed(
         self, member_url: str, limit: int = MAX_FEED_PAGE_SIZE, after_post_no: Optional[int] = None
@@ -2215,6 +2509,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help=argparse.SUPPRESS)
     parser.add_argument("--auth-token", default=None, help="인증 토큰 (Bearer)")
     parser.add_argument("--cookie", default=None, help="쿠키 헤더 문자열")
+    parser.add_argument("--delay", type=float, default=0.1, help="요청 후 대기 시간 (초, 기본: 0.1)")
+    parser.add_argument("--jitter", type=float, default=0.4, help="랜덤 지터 시간 (초, 기본: 0.4)")
+    parser.add_argument("--cooldown", type=float, default=1.0, help="요청 간 최소 쿨다운 간격 (초, 기본: 1.0)")
+    parser.add_argument("--no-auto-headers", action="store_true", help="자동 브라우저 헤더 생성 비활성화")
+    parser.add_argument("--rotate-headers", action="store_true", help="요청마다 브라우저 헤더 무작위 로테이션")
     parser.add_argument("--json", action="store_true", help="결과를 JSON으로 출력")
 
     subparsers = parser.add_subparsers(dest="command", help="실행할 명령")
@@ -2293,7 +2592,16 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         parser.print_help()
         return 0
 
-    cli = FandingClient(base_url=args.base_url, auth_token=args.auth_token, cookies=args.cookie)
+    cli = FandingClient(
+        base_url=args.base_url,
+        auth_token=args.auth_token,
+        cookies=args.cookie,
+        delay=getattr(args, "delay", 0.1),
+        jitter=getattr(args, "jitter", 0.4),
+        cooldown=getattr(args, "cooldown", 1.0),
+        auto_headers=not getattr(args, "no_auto_headers", False),
+        rotate_headers=getattr(args, "rotate_headers", False),
+    )
 
     try:
         if args.command == "channel":
